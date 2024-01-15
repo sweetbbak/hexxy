@@ -148,7 +148,9 @@ func Hexxy(args []string) error {
 			return err
 		}
 
-		Hexdump(file, color)
+		if err := Hexdump(file, color); err != nil {
+			return err
+		}
 	}
 
 	return nil
