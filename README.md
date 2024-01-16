@@ -5,6 +5,8 @@ A modern alternative to `xxd` and `hexdump`
 Huge thanks to ![igoracmelo](https://github.com/igoracmelo/xx) for the idea and reference.
 The idea and code for colorizing xxd/hexdump output in a gradient format came from them.
 
+![](img.png)
+
 ## Example usage
 ```sh
 hexxy /path/to/file.bin
