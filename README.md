@@ -16,4 +16,6 @@ hexxy --no-color /path/to/file.bin
 hexxy file1 file2 file3
 # read from stdin
 cat mybinary | hexxy
+# display offset in Decimal format
+hexxy -td file.bin
 ```
