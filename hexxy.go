@@ -14,11 +14,17 @@ import (
 )
 
 var opts struct {
-	NoColor bool `short:"N" long:"no-color" description:"do not print output with color"`
-	Verbose bool `short:"v" long:"verbose" description:"print debugging information and verbose output"`
+	NoColor      bool   `short:"N" long:"no-color" description:"do not print output with color"`
+	OffsetFormat string `short:"t" long:"radix" default:"x" choice:"d" choice:"o" choice:"x" description:"Print offset in [d|o|x] format"`
+	Verbose      bool   `short:"v" long:"verbose" description:"print debugging information and verbose output"`
 }
 
 var Debug = func(string, ...interface{}) {}
+var OffsetFormat string
+var Separator string
+
+const GREY = "\x1b[38;2;111;111;111m"
+const CLR = "\x1b[0m"
 
 type Color struct {
 	disable bool
@@ -70,10 +76,23 @@ func asciiRow(ascii []byte, clr *Color, stdout io.Writer) {
 	}
 }
 
+func printOffset(offset uint64) string {
+	return fmt.Sprintf(OffsetFormat, offset)
+}
+
+func printSeparator(writer io.Writer, newline bool) {
+	if newline {
+		fmt.Fprintln(writer, Separator)
+	} else {
+		fmt.Fprint(writer, Separator)
+	}
+}
+
 func Hexdump(file *os.File, color *Color) error {
 	stdout := bufio.NewWriter(os.Stdout)
 	stderr := os.Stderr
 	ascii := [16]byte{}
+	defer stdout.Flush()
 
 	var i uint64 = 0
 	reader := bufio.NewReaderSize(file, 10*1024*1024)
@@ -92,7 +111,9 @@ func Hexdump(file *os.File, color *Color) error {
 
 		// offset
 		if i%16 == 0 {
-			fmt.Fprintf(stdout, "%08x   ", i)
+			// fmt.Fprintf(stdout, "%08x   ", i)
+			offy := printOffset(i)
+			fmt.Fprint(stdout, offy)
 		}
 
 		// byte
@@ -105,9 +126,14 @@ func Hexdump(file *os.File, color *Color) error {
 
 		// print ascii row and newline │ | ┆
 		if (i+1)%16 == 0 {
-			fmt.Fprint(stdout, "│")
+			// fmt.Fprint(stdout, "│")
+			printSeparator(stdout, false)
+
 			asciiRow(ascii[:i%16], color, stdout)
-			fmt.Fprintln(stdout, "│")
+
+			// fmt.Fprintln(stdout, "│")
+			printSeparator(stdout, true)
+
 			ascii = [16]byte{} // reset
 		}
 
@@ -117,13 +143,45 @@ func Hexdump(file *os.File, color *Color) error {
 	if i%16 != 0 {
 		left := int(16 - i%16)
 		spaces := 3*left + (left-1)/4 + 1
+
 		fmt.Fprint(stdout, strings.Repeat(" ", spaces))
-		fmt.Fprint(stdout, "│")
+		printSeparator(stdout, false)
+
 		asciiRow(ascii[:i%16], color, stdout)
-		fmt.Fprintln(stdout, "│")
-		fmt.Fprintf(stdout, "%08x\n", i)
+		printSeparator(stdout, true)
+
+		offy := printOffset(i)
+		fmt.Fprintln(stdout, offy)
+		// fmt.Fprintf(stdout, "%08x\n", i)
 	}
 
+	return nil
+}
+
+func getOffsetFormat() error {
+	var prefix string
+	var suffix string
+
+	if !opts.NoColor {
+		prefix = GREY
+		suffix = CLR
+	} else {
+		prefix = ""
+		suffix = ""
+	}
+
+	Separator = prefix + "│" + suffix
+
+	switch opts.OffsetFormat {
+	case "d":
+		OffsetFormat = prefix + "%08d   " + suffix
+	case "o":
+		OffsetFormat = prefix + "%08o   " + suffix
+	case "x":
+		OffsetFormat = prefix + "%08x   " + suffix
+	default:
+		return fmt.Errorf("Offset format must be [d|o|x]")
+	}
 	return nil
 }
 
@@ -147,6 +205,7 @@ func Hexxy(args []string) error {
 		if err != nil {
 			return err
 		}
+		defer file.Close()
 
 		if err := Hexdump(file, color); err != nil {
 			return err
@@ -167,6 +226,11 @@ func main() {
 
 	if opts.Verbose {
 		Debug = log.Printf
+	}
+
+	err = getOffsetFormat()
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	if err := Hexxy(args); err != nil {
