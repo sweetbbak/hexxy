@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +17,10 @@ import (
 var opts struct {
 	NoColor      bool   `short:"N" long:"no-color" description:"do not print output with color"`
 	OffsetFormat string `short:"t" long:"radix" default:"x" choice:"d" choice:"o" choice:"x" description:"Print offset in [d|o|x] format"`
+	Reverse      bool   `short:"r" long:"reverse" description:"re-assemble hexdump output back into binary"`
+	Plain        bool   `short:"p" long:"plain" description:"plain output without ascii table and offset row [often used with hexxy -r]"`
+	ForceColor   bool   `short:"F" long:"force-color" description:"color is automatically disabled if output is a pipe, this option forces color output"`
+	Separator    string `short:"s" long:"separator" default:"|" description:"separator character for the ascii character table"`
 	Verbose      bool   `short:"v" long:"verbose" description:"print debugging information and verbose output"`
 }
 
@@ -81,6 +86,7 @@ func printOffset(offset uint64) string {
 }
 
 func printSeparator(writer io.Writer, newline bool) {
+	// WHY???
 	if newline {
 		fmt.Fprintln(writer, Separator)
 	} else {
@@ -158,27 +164,97 @@ func Hexdump(file *os.File, color *Color) error {
 	return nil
 }
 
+func HexdumpPlain(file *os.File) error {
+	// stdout := bufio.NewWriter(os.Stdout)
+	// stderr := os.Stderr
+	// defer stdout.Flush()
+
+	src, err := io.ReadAll(file)
+	if err != nil {
+		return err
+	}
+
+	dst := make([]byte, hex.EncodedLen(len(src)))
+	hex.Encode(dst, src)
+	fmt.Printf("%s\n", dst)
+
+	// reader := bufio.NewReaderSize(file, 10*1024*1024)
+
+	// for {
+	// 	b, err := reader.ReadByte()
+	// 	if errors.Is(err, io.EOF) {
+	// 		break
+	// 	}
+	// 	if err != nil {
+	// 		fmt.Fprintf(stderr, "Failed to read %v: %v\n", file.Name(), err)
+	// 		return err
+	// 	}
+	// 	stdout.WriteString(fmt.Sprintf("%02x", string(b)))
+	// }
+	return nil
+}
+
+func plain2Binary(file *os.File) error {
+
+	return reverse(os.Stdout, os.Stdin)
+	// contents, err := io.ReadAll(file)
+	// if err != nil {
+	// 	return err
+	// }
+	// fmt.Println(len(contents))
+	// fmt.Printf("Binary byte representation: %08b\n", contents)
+
+	// _, err = hex.Decode(contents, dst)
+	// if err != nil {
+	// 	return err
+	// }
+	// os.Stdout.Write(dst)
+
+	// dest := make([]byte, hex.EncodedLen(len(contents)))
+	// hex.Decode(dest, contents)
+
+	// fmt.Printf("%s\n", dest)
+
+	// return nil
+}
+
 func getOffsetFormat() error {
 	var prefix string
 	var suffix string
+	var sep string
+
+	// turn off color if output is a pipe
+	// idk if I like this though since I often
+	// use hexxy asdf | head -n 10 but I also want to work on --reverse option
+
+	// stat, _ := os.Stdout.Stat()
+	// if stat.Mode()&os.ModeCharDevice == 0 && !opts.ForceColor {
+	// 	opts.NoColor = true
+	// }
 
 	if !opts.NoColor {
 		prefix = GREY
 		suffix = CLR
+		sep = "│"
 	} else {
 		prefix = ""
 		suffix = ""
+		sep = "|"
 	}
 
-	Separator = prefix + "│" + suffix
+	if opts.Separator != "" {
+		sep = opts.Separator
+	}
+
+	Separator = prefix + sep + suffix
 
 	switch opts.OffsetFormat {
 	case "d":
-		OffsetFormat = prefix + "%08d   " + suffix
+		OffsetFormat = prefix + "%08d  " + suffix
 	case "o":
-		OffsetFormat = prefix + "%08o   " + suffix
+		OffsetFormat = prefix + "%08o  " + suffix
 	case "x":
-		OffsetFormat = prefix + "%08x   " + suffix
+		OffsetFormat = prefix + "%08x  " + suffix
 	default:
 		return fmt.Errorf("Offset format must be [d|o|x]")
 	}
@@ -187,6 +263,10 @@ func getOffsetFormat() error {
 
 func Hexxy(args []string) error {
 	color := &Color{}
+
+	if opts.Reverse {
+		return plain2Binary(os.Stdin)
+	}
 
 	if opts.NoColor {
 		color.disable = true
@@ -197,7 +277,11 @@ func Hexxy(args []string) error {
 	}
 
 	if len(args) < 1 && stdinOpen() {
-		return Hexdump(os.Stdin, color)
+		if opts.Plain {
+			return HexdumpPlain(os.Stdin)
+		} else {
+			return Hexdump(os.Stdin, color)
+		}
 	}
 
 	for _, f := range args {
@@ -207,8 +291,14 @@ func Hexxy(args []string) error {
 		}
 		defer file.Close()
 
-		if err := Hexdump(file, color); err != nil {
-			return err
+		if opts.Plain {
+			if err := HexdumpPlain(file); err != nil {
+				return err
+			}
+		} else {
+			if err := Hexdump(file, color); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -226,6 +316,19 @@ func main() {
 
 	if opts.Verbose {
 		Debug = log.Printf
+	}
+
+	if opts.Reverse {
+		// f, err := os.Open(args[0])
+		// if err != nil {
+		// 	panic(err)
+		// }
+		// defer f.Close()
+		err = plain2Binary(os.Stdin)
+		if err != nil {
+			log.Fatal(err)
+		}
+		os.Exit(0)
 	}
 
 	err = getOffsetFormat()
