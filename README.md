@@ -1,11 +1,9 @@
-# Hexxy
+<p align="center">
+  <img src="assets/hexxy.png" />
+  <div align="center">A modern alternative to `xxd` and `hexdump`</div>
+</p>
 
-A modern alternative to `xxd` and `hexdump`
-
-Huge thanks to ![igoracmelo](https://github.com/igoracmelo/xx) for to use color gradients
-to make bytes more readable.
-
-![example of hexxy in action](img.png)
+![example of hexxy in action](assets/img.png)
 
 ## Example usage
 ```sh
