@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"runtime/pprof"
 	"strconv"
 
 	"github.com/jessevdk/go-flags"
@@ -277,7 +276,6 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 				} else {
 					w.Write(char)
 				}
-
 				c++
 
 				if k == octs*groupSize {
@@ -461,12 +459,6 @@ func main() {
 	if opts.Verbose {
 		Debug = log.Printf
 	}
-
-	f, err := os.Create("mem.cpu")
-	defer f.Close()
-
-	pprof.StartCPUProfile(f)
-	defer pprof.StopCPUProfile()
 
 	if err := Hexxy(args); err != nil {
 		log.Fatal(err)
