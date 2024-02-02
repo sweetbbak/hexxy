@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime/pprof"
 	"strconv"
 
 	"github.com/jessevdk/go-flags"
@@ -42,8 +43,8 @@ const (
 )
 
 const (
-	ldigits = "0123456789abcdef"
 	udigits = "0123456789ABCDEF"
+	ldigits = "0123456789abcdef"
 )
 
 var (
@@ -62,6 +63,10 @@ var (
 	comma        = []byte(",")
 	semiColonNl  = []byte(";\n")
 	bar          = []byte("|")
+)
+
+var (
+	STDOUT_ISPIPE bool
 )
 
 func inputIsPipe() bool {
@@ -263,9 +268,16 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 			for i, k := 0, octs; i < n; i, k = i+1, k+octs {
 				hexEncode(char, line[i:i+1], caps)
 
-				// s := color.Colorize(string(char), byte(i))
-				// w.Write([]byte(s))
-				w.Write(char)
+				if !opts.NoColor && !STDOUT_ISPIPE {
+					i := line[i : i+1][0]
+					b, c := color.Colorize2(i)
+					w.Write(b)
+					w.Write(char)
+					w.Write(c)
+				} else {
+					w.Write(char)
+				}
+
 				c++
 
 				if k == octs*groupSize {
@@ -438,7 +450,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if !inputIsPipe() && len(args) == 0 {
+	STDOUT_ISPIPE = inputIsPipe()
+
+	if !STDOUT_ISPIPE && len(args) == 0 {
 		parser.WriteHelp(os.Stderr)
 		fmt.Print(usage_msg)
 		os.Exit(0)
@@ -447,6 +461,12 @@ func main() {
 	if opts.Verbose {
 		Debug = log.Printf
 	}
+
+	f, err := os.Create("mem.cpu")
+	defer f.Close()
+
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
 
 	if err := Hexxy(args); err != nil {
 		log.Fatal(err)
