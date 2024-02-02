@@ -2,7 +2,6 @@ package main
 
 import (
 	"strconv"
-	"unsafe"
 )
 
 const GREY = "\x1b[38;2;111;111;111m"
@@ -45,23 +44,4 @@ func (c *Color) Colorize(s string, clr byte) string {
 // function to colorize bytes - avoiding string conversions
 func (c *Color) Colorize2(clr byte) ([]byte, []byte) {
 	return c.cvalues[clr], CLRR
-}
-
-func IntToByteArray(num int) []byte {
-	size := int(unsafe.Sizeof(num))
-	arr := make([]byte, size)
-	for i := 0; i < size; i++ {
-		byt := *(*uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&num)) + uintptr(i)))
-		arr[i] = byt
-	}
-	return arr
-}
-
-func ByteArrayToInt(arr []byte) int64 {
-	val := int64(0)
-	size := len(arr)
-	for i := 0; i < size; i++ {
-		*(*uint8)(unsafe.Pointer(uintptr(unsafe.Pointer(&val)) + uintptr(i))) = arr[i]
-	}
-	return val
 }
