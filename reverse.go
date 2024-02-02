@@ -2,84 +2,110 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
-	"os"
-	"strconv"
-	"strings"
 )
 
-// func reverse(w io.Writer, path string) error {
-func reverse(w io.Writer, f *os.File) error {
-	// f, err := os.Open(path)
-	// if err != nil {
-	// 	return err
-	// }
-	// defer f.Close()
-	s := bufio.NewScanner(f)
+func XXDReverse(r io.Reader, w io.Writer) error {
+	var (
+		cols int
+		octs int
+		char = make([]byte, 1)
+	)
 
-	star := false
-	var prev uint64
-	var data []byte
-	var zero [16]byte
-
-	for s.Scan() {
-		line := s.Text()
-		if line == "*" {
-			star = true
-			continue
-		}
-
-		if len(line) < len("00000000") {
-			return fmt.Errorf("invalid line %q, missing address prefix", line)
-		}
-
-		part := line[:len("00000000")]
-		line = line[len("00000000"):]
-
-		addr, err := strconv.ParseUint(part, 16, 32)
-		if err != nil {
-			return err
-		}
-
-		if star {
-			for i := prev + 16; i < addr; i += 16 {
-				data = append(data, zero[:]...)
-			}
-			star = false
-		}
-
-		prev = addr
-		pos := strings.IndexByte(line, '|')
-
-		if pos != -1 {
-			line = line[:pos]
-		}
-
-		for len(line) > 0 {
-			line = strings.TrimSpace(line)
-			pos := strings.IndexByte(line, ' ')
-			if pos == -1 {
-				pos = len(line)
-			}
-
-			part := line[:pos]
-			line = line[pos:]
-
-			b, err := strconv.ParseUint(part, 16, 8)
-			if err != nil {
-				return err
-			}
-
-			data = append(data, byte(b))
-		}
-	}
-	if err := s.Err(); err != nil {
-		return err
+	if opts.Columns != -1 {
+		cols = opts.Columns
 	}
 
-	if _, err := w.Write(data); err != nil {
-		return err
+	switch dumpType {
+	case dumpBinary:
+		octs = 8
+	case dumpCformat:
+		octs = 4
+	default:
+		octs = 2
 	}
-	return nil
+
+	if opts.Len != -1 {
+		if opts.Len < int64(cols) {
+			cols = int(opts.Len)
+		}
+	}
+
+	if octs < 1 {
+		octs = cols
+	}
+
+	c := int64(0)
+	rd := bufio.NewReader(r)
+	for {
+		line, err := rd.ReadBytes('\n')
+		n := len(line)
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+			return fmt.Errorf("hexxy: %v", err)
+		}
+
+		if n == 0 {
+			return nil
+		}
+
+		if dumpType == dumpHex {
+			for i := 0; n >= octs; {
+				if rv := hexDecode(char, line[i:i+octs]); rv == 0 {
+					w.Write(char)
+					i += 2
+					n -= 2
+					c++
+				} else if rv == -1 {
+					i++
+					n--
+				} else {
+					// rv == -2
+					i += 2
+					n -= 2
+				}
+			}
+		} else if dumpType == dumpBinary {
+			for i := 0; n >= octs; {
+				if binaryDecode(char, line[i:i+octs]) != -1 {
+					i++
+					n--
+					continue
+				} else {
+					w.Write(char)
+					i += 8
+					n -= 8
+					c++
+				}
+			}
+		} else if dumpType == dumpPlain {
+			for i := 0; n >= octs; i++ {
+				if hexDecode(char, line[i:i+octs]) == 0 {
+					w.Write(char)
+					c++
+				}
+				n--
+			}
+		} else if dumpType == dumpCformat {
+			for i := 0; n >= octs; {
+				if rv := hexDecode(char, line[i:i+octs]); rv == 0 {
+					w.Write(char)
+					i += 4
+					n -= 4
+					c++
+				} else if rv == -1 {
+					i++
+					n--
+				} else { // rv == -2
+					i += 2
+					n -= 2
+				}
+			}
+		}
+
+		if c == int64(cols) && cols > 0 {
+			return nil
+		}
+	}
 }

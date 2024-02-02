@@ -2,6 +2,19 @@ package main
 
 import ()
 
+func binaryEncode(dst, src []byte) {
+	d := uint(0)
+	_, _ = src[0], dst[7]
+	for i := 7; i >= 0; i-- {
+		if src[0]&(1<<d) == 0 {
+			dst[i] = 0
+		} else {
+			dst[i] = 1
+		}
+		d++
+	}
+}
+
 // returns -1 on success
 // returns k > -1 if space found where k is index of space byte
 func binaryDecode(dst, src []byte) int {
@@ -96,6 +109,16 @@ func empty(b *[]byte) bool {
 		}
 	}
 	return true
+}
+
+// check if filename character contains problematic characters
+func isSpecial(b byte) bool {
+	switch b {
+	case '/', '!', '#', '$', '%', '^', '&', '*', '(', ')', ';', ':', '|', '{', '}', '\\', '~', '`':
+		return true
+	default:
+		return false
+	}
 }
 
 // quick binary tree check

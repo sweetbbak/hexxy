@@ -21,7 +21,7 @@ var opts struct {
 	Seek         int64  `short:"s" long:"seek" description:"start at <seek> bytes"`
 	Len          int64  `short:"l" long:"len" description:"stop after <len> octets"`
 	Columns      int    `short:"c" long:"columns" description:"column count"`
-	GroupSize    int    `short:"g" long:"groups" description:"group count"`
+	GroupSize    int    `short:"g" long:"groups" description:"group size of bytes"`
 	Plain        bool   `short:"p" long:"plain" description:"plain output without ascii table and offset row [often used with hexxy -r]"`
 	Upper        bool   `short:"u" long:"upper" description:"output hex in UPPERCASE format"`
 	CInclude     bool   `short:"i" long:"include" description:"output in C include format"`
@@ -64,50 +64,6 @@ var (
 	bar          = []byte("|")
 )
 
-func binaryEncode(dst, src []byte) {
-	d := uint(0)
-	_, _ = src[0], dst[7]
-	for i := 7; i >= 0; i-- {
-		if src[0]&(1<<d) == 0 {
-			dst[i] = 0
-		} else {
-			dst[i] = 1
-		}
-		d++
-	}
-}
-
-const GREY = "\x1b[38;2;111;111;111m"
-const CLR = "\x1b[0m"
-
-type Color struct {
-	disable bool
-	values  [256]string
-}
-
-func (c *Color) Compute() {
-	const WHITEB = "\x1b[1;37m"
-	for i := 0; i < 256; i++ {
-		var fg, bg string
-
-		lowVis := i == 0 || (i >= 16 && i <= 20) || (i >= 232 && i <= 242)
-
-		if lowVis {
-			fg = WHITEB + "\x1b[38;5;" + "255" + "m"
-			bg = "\x1b[48;5;" + strconv.Itoa(int(i)) + "m"
-		} else {
-			fg = "\x1b[38;5;" + strconv.Itoa(int(i)) + "m"
-			bg = ""
-		}
-		c.values[i] = bg + fg
-	}
-}
-
-func (c *Color) Colorize(s string, clr byte) string {
-	const NOCOLOR = "\x1b[0m"
-	return c.values[clr] + s + NOCOLOR
-}
-
 func inputIsPipe() bool {
 	stat, _ := os.Stdin.Stat()
 	return stat.Mode()&os.ModeCharDevice != os.ModeCharDevice
@@ -118,53 +74,7 @@ func outputIsPipe() bool {
 	return stat.Mode()&os.ModeCharDevice != os.ModeCharDevice
 }
 
-func HexdumpPlain(file *os.File) error {
-	var i uint64
-	reader := bufio.NewReaderSize(file, 10*1024)
-
-	for {
-		b, err := reader.ReadByte()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("Failed to read %v: %w\n", file.Name(), err)
-		}
-
-		if i%30 == 0 {
-			println()
-		}
-
-		fmt.Printf("%02x", b)
-		i++
-	}
-
-	return nil
-}
-
-// func plain2Binary(file *os.File) error {
-// 	return reverse(os.Stdout, os.Stdin)
-// }
-
-// func getOffsetFormat() error {
-// 	var prefix string
-// 	var suffix string
-// 	var format string
-
-// 	switch opts.OffsetFormat {
-// 	case "d":
-// 		format = prefix + "%08d  " + suffix
-// 	case "o":
-// 		format = prefix + "%08o  " + suffix
-// 	case "x":
-// 		format = prefix + "%08x  " + suffix
-// 	default:
-// 		return fmt.Errorf("Offset format must be [d|o|x]")
-// 	}
-// 	return nil
-// }
-
-func XXD(r io.Reader, w io.Writer, filename string) error {
+func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 	var (
 		lineOffset  int64
 		hexOffset   = make([]byte, 6)
@@ -182,10 +92,10 @@ func XXD(r io.Reader, w io.Writer, filename string) error {
 
 	if dumpType == dumpCformat {
 		_ = copy(varDeclChar[0:14], unsignedChar[:])
-		_ = copy(varDeclInt[0:14], lenEquals[:])
+		_ = copy(varDeclInt[0:16], unsignedInt[:])
 
 		for i := 0; i < len(filename); i++ {
-			if filename[i] != '.' {
+			if !isSpecial(filename[i]) {
 				varDeclChar[14+i] = filename[i]
 				varDeclInt[16+i] = filename[i]
 			} else {
@@ -261,7 +171,7 @@ func XXD(r io.Reader, w io.Writer, filename string) error {
 
 	for {
 		n, err = io.ReadFull(r, line)
-		if err != nil && errors.Is(err, io.EOF) && errors.Is(err, io.ErrUnexpectedEOF) {
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 			return fmt.Errorf("hexxy: %v", err)
 		}
 
@@ -302,7 +212,7 @@ func XXD(r io.Reader, w io.Writer, filename string) error {
 			nulLine++
 
 			if nulLine > 1 {
-				lineOffset++
+				lineOffset++ // still increment offset while printing crunched lines with '*'
 				continue
 			}
 		}
@@ -352,6 +262,9 @@ func XXD(r io.Reader, w io.Writer, filename string) error {
 			// hex values -- default
 			for i, k := 0, octs; i < n; i, k = i+1, k+octs {
 				hexEncode(char, line[i:i+1], caps)
+
+				// s := color.Colorize(string(char), byte(i))
+				// w.Write([]byte(s))
 				w.Write(char)
 				c++
 
@@ -467,10 +380,13 @@ func Hexxy(args []string) error {
 	defer out.Flush()
 
 	if opts.Reverse {
-
+		if err := XXDReverse(infile, outfile); err != nil {
+			return fmt.Errorf("hexxy: %v", err.Error())
+		}
+		return nil
 	}
 
-	if err := XXD(infile, out, infile.Name()); err != nil {
+	if err := XXD(infile, out, infile.Name(), color); err != nil {
 		return fmt.Errorf("hexxy: %v", err.Error())
 	}
 
@@ -482,6 +398,21 @@ hexxy is a command line hex dumping tool
 
 Examples:
 	hexxy [OPTIONS] input-file
+
+	# Include a binary as a C variable
+	hexxy -i input-file > output.c
+
+	# Use plain non-formatted output
+	hexxy -p input-file
+
+	# Reverse plain non-formatted output (reverse plain)
+	hexxy -rp input-file
+
+	# Show output with a space in between N groups of bytes
+	hexxy -g1 input-file ... -> outputs: 00000000: 0f 1a ff ff 00 aa
+
+	# Seek to N bytes in an input file
+	hexxy -s 12546 input-file
 `
 
 // extra usage examples
@@ -500,6 +431,7 @@ func main() {
 	parser := flags.NewParser(&opts, flags.Default)
 	args, err := parser.Parse()
 	if flags.WroteHelp(err) {
+		fmt.Print(usage_msg)
 		os.Exit(0)
 	}
 	if err != nil {
@@ -508,12 +440,14 @@ func main() {
 
 	if !inputIsPipe() && len(args) == 0 {
 		parser.WriteHelp(os.Stderr)
+		fmt.Print(usage_msg)
 		os.Exit(0)
 	}
 
 	if opts.Verbose {
 		Debug = log.Printf
 	}
+
 	if err := Hexxy(args); err != nil {
 		log.Fatal(err)
 	}
