@@ -17,7 +17,7 @@ go build
 On ArchLinux ([hexxy-git](https://aur.archlinux.org/packages/hexxy-git)), e.g.:
 
 ```
-pikaur -S hexo-git
+pikaur -S hexxy-git
 ```
 
 ## Example usage
