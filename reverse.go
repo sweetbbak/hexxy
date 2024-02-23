@@ -37,9 +37,11 @@ func XXDReverse(r io.Reader, w io.Writer) error {
 		octs = cols
 	}
 
+	// character count
 	c := int64(0)
 	rd := bufio.NewReader(r)
 	for {
+		// TODO this is causing issues with plain
 		line, err := rd.ReadBytes('\n')
 		n := len(line)
 		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
@@ -52,7 +54,7 @@ func XXDReverse(r io.Reader, w io.Writer) error {
 
 		if dumpType == dumpHex {
 			for i := 0; n >= octs; {
-				if rv := hexDecode(char, line[i:i+octs]); rv == 0 {
+				if rv, _ := hexDecode(char, line[i:i+octs]); rv == 0 {
 					w.Write(char)
 					i += 2
 					n -= 2
@@ -81,7 +83,7 @@ func XXDReverse(r io.Reader, w io.Writer) error {
 			}
 		} else if dumpType == dumpPlain {
 			for i := 0; n >= octs; i++ {
-				if hexDecode(char, line[i:i+octs]) == 0 {
+				if rv, _ := hexDecode(char, line[i:i+octs]); rv != 0 {
 					w.Write(char)
 					c++
 				}
@@ -89,7 +91,7 @@ func XXDReverse(r io.Reader, w io.Writer) error {
 			}
 		} else if dumpType == dumpCformat {
 			for i := 0; n >= octs; {
-				if rv := hexDecode(char, line[i:i+octs]); rv == 0 {
+				if rv, _ := hexDecode(char, line[i:i+octs]); rv == 0 {
 					w.Write(char)
 					i += 4
 					n -= 4

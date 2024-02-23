@@ -1,6 +1,38 @@
 package main
 
-import ()
+import (
+	"errors"
+	"fmt"
+)
+
+const (
+	reverseHexTable = "" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\xff\xff\xff\xff\xff\xff" +
+		"\xff\x0a\x0b\x0c\x0d\x0e\x0f\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\x0a\x0b\x0c\x0d\x0e\x0f\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff" +
+		"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+)
+
+var ErrLength = errors.New("encoding/hex: odd length hex string")
+
+// InvalidByteError values describe errors resulting from an invalid byte in a hex string.
+type InvalidByteError byte
+
+func (e InvalidByteError) Error() string {
+	return fmt.Sprintf("encoding/hex: invalid byte: %#U", rune(e))
+}
 
 func binaryEncode(dst, src []byte) {
 	d := uint(0)
@@ -58,33 +90,33 @@ func hexEncode(dst, src []byte, hextable string) {
 // returns -1 on bad byte or space (\t \s \n)
 // returns -2 on two consecutive spaces
 // returns 0 on success
-func hexDecode(dst, src []byte) int {
-	_, _ = src[2], dst[0]
 
-	if isSpace(src[0]) {
-		if isSpace(src[1]) {
-			return -2
+func hexDecode(dst, src []byte) (int, error) {
+	i, j := 0, 1
+	for ; j < len(src); j += 2 {
+		p := src[j-1]
+		q := src[j]
+
+		a := reverseHexTable[p]
+		b := reverseHexTable[q]
+		if a > 0x0f {
+			return i, InvalidByteError(p)
 		}
-		return -1
-	}
-
-	if isPrefix(src[0:2]) {
-		src = src[2:]
-	}
-
-	for i := 0; i < len(src)/2; i++ {
-		a, ok := fromHexChar(src[i*2])
-		if !ok {
-			return -1
+		if b > 0x0f {
+			return i, InvalidByteError(q)
 		}
-		b, ok := fromHexChar(src[i*2+1])
-		if !ok {
-			return -1
-		}
-
-		dst[0] = (a << 4) | b
+		dst[i] = (a << 4) | b
+		i++
 	}
-	return 0
+	if len(src)%2 == 1 {
+		// Check for invalid char before reporting bad length,
+		// since the invalid char (if present) is an earlier problem.
+		if reverseHexTable[src[j-1]] > 0x0f {
+			return i, InvalidByteError(src[j-1])
+		}
+		return i, ErrLength
+	}
+	return i, nil
 }
 
 // copied from encoding/hex package
