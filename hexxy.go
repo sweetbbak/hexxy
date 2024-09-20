@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/jessevdk/go-flags"
 )
@@ -26,9 +27,9 @@ var opts struct {
 	Upper        bool   `short:"u" long:"upper" description:"output hex in UPPERCASE format"`
 	CInclude     bool   `short:"i" long:"include" description:"output in C include format"`
 	OutputFile   string `short:"o" long:"output" description:"automatically output to file instead of STDOUT"`
-	Separator    string `long:"separator" default:"|" description:"separator character for the ascii character table"`
-	ForceColor   bool   `short:"F" long:"force-color" description:"color is automatically disabled if output is a pipe, this option forces color output"`
-	NoColor      bool   `short:"N" long:"no-color" description:"do not print output with color"`
+	Separator    string `          long:"separator" default:"|" description:"separator character for the ascii character table"`
+	HasColor     string `short:"C" long:"color" default:"auto" choice:"always" choice:"auto" choice:"never" description:"this option forces color output [always|auto|never]"`
+	NoColor      bool   `short:"n" long:"no-color" description:"do not print output with color"`
 	Verbose      bool   `short:"v" long:"verbose" description:"print debugging information and verbose output"`
 }
 
@@ -65,7 +66,7 @@ var (
 )
 
 var (
-	STDOUT_ISPIPE bool
+	USE_COLOR bool
 )
 
 func inputIsPipe() bool {
@@ -78,7 +79,7 @@ func outputIsPipe() bool {
 	return stat.Mode()&os.ModeCharDevice != os.ModeCharDevice
 }
 
-func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
+func HexxyDump(r io.Reader, w io.Writer, filename string, color *Color) error {
 	var (
 		lineOffset  int64
 		hexOffset   = make([]byte, 6)
@@ -92,6 +93,7 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 		varDeclInt  = make([]byte, 16+len(filename)+7) // enough room for "unsigned int NAME_FORMAT = "
 		nulLine     int64
 		totalOcts   int64
+		colFmt      int
 	)
 
 	if dumpType == dumpCformat {
@@ -158,6 +160,17 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 		octs = cols
 	}
 
+	switch opts.OffsetFormat {
+	case "d":
+		colFmt = 10
+	case "o":
+		colFmt = 8
+	case "x":
+		fallthrough
+	default:
+		colFmt = 16
+	}
+
 	// allocate their size based on the users specs, hence why its declared here
 	var (
 		line = make([]byte, cols)
@@ -179,6 +192,8 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 			return fmt.Errorf("hexxy: %v", err)
 		}
 
+		// we check early on for if the dump type is "plain" (no formatting, its just a stream of bytes)
+		// and we don't have to do any hard work
 		if dumpType == dumpPlain && n != 0 {
 			for i := 0; i < n; i++ {
 				hexEncode(char, line[i:i+1], caps)
@@ -188,6 +203,7 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 			continue
 		}
 
+		// write the line ending based on the dump "mode"
 		if n == 0 {
 			if dumpType == dumpPlain {
 				w.Write(newLine)
@@ -207,7 +223,7 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 			totalOcts += opts.Len
 		}
 
-		if opts.Autoskip && empty(&line) {
+		if opts.Autoskip && isEmpty(&line) {
 			if nulLine == 1 {
 				w.Write(asterisk)
 				w.Write(newLine)
@@ -222,12 +238,26 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 		}
 
 		// hex or binary formats only
+		// writing the 0000000: part
 		if dumpType <= dumpBinary {
-			// line offset
-			hexOffset = strconv.AppendInt(hexOffset[0:0], lineOffset, 16)
-			w.Write(zeroHeader[0:(6 - len(hexOffset))])
-			w.Write(hexOffset)
-			w.Write(zeroHeader[6:])
+			// create line offset
+			hexOffset = strconv.AppendInt(hexOffset[0:0], lineOffset, colFmt)
+
+			// confusing looking but we are just "slicing" our zero padding buffer and our offset byte buffer together
+			// ie zeroHeader = 0000000: and hexOffset = 10 -- we are just inserting that 10 in this position '0000010:'
+			// based on the offsets length
+			if USE_COLOR {
+				w.Write([]byte(GREY))
+				w.Write(zeroHeader[0:(6 - len(hexOffset))])
+				w.Write(hexOffset)
+				w.Write(zeroHeader[6:])
+				w.Write([]byte(CLEAR))
+			} else {
+				w.Write(zeroHeader[0:(6 - len(hexOffset))])
+				w.Write(hexOffset)
+				w.Write(zeroHeader[6:])
+			}
+
 			lineOffset++
 		} else if doCheader {
 			w.Write(varDeclChar)
@@ -236,11 +266,28 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 		}
 
 		if dumpType == dumpBinary {
-			// binary values
+			// dump binary values
 			for i, k := 0, octs; i < n; i, k = i+1, k+octs {
 				binaryEncode(char, line[i:i+1])
-				w.Write(char)
-				c++
+
+				if USE_COLOR {
+					for _, b := range char {
+						if b == '1' {
+							w.Write([]byte("\x1b[32m"))
+							w.Write([]byte{b})
+							w.Write([]byte(CLEAR))
+						} else {
+							w.Write([]byte("\x1b[34m"))
+							w.Write([]byte{b})
+							w.Write([]byte(CLEAR))
+						}
+					}
+					// w.Write(char)
+					c++
+				} else {
+					w.Write(char)
+					c++
+				}
 
 				if k == octs*groupSize {
 					k = 0
@@ -248,6 +295,7 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 				}
 			}
 		} else if dumpType == dumpCformat {
+			// dump C format
 			if !doCEnd {
 				w.Write(doubleSpace)
 			}
@@ -267,7 +315,7 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 			for i, k := 0, octs; i < n; i, k = i+1, k+octs {
 				hexEncode(char, line[i:i+1], caps)
 
-				if !opts.NoColor && !STDOUT_ISPIPE {
+				if USE_COLOR {
 					i := line[i : i+1][0]
 					b, c := color.Colorize2(i)
 					w.Write(b)
@@ -328,16 +376,18 @@ func XXD(r io.Reader, w io.Writer, filename string, color *Color) error {
 				w.Write(bar)
 			}
 		}
+
 		w.Write(newLine)
 		nl++
 	}
+
 	return nil
 }
 
 func Hexxy(args []string) error {
 	color := &Color{}
 
-	if opts.NoColor {
+	if opts.NoColor || !USE_COLOR {
 		color.disable = true
 	}
 
@@ -345,8 +395,11 @@ func Hexxy(args []string) error {
 		color.Compute()
 	}
 
-	var infile, outfile *os.File
-	var err error
+	var (
+		infile  *os.File
+		outfile *os.File
+		err     error
+	)
 
 	if len(args) < 1 && inputIsPipe() {
 		infile = os.Stdin
@@ -356,6 +409,7 @@ func Hexxy(args []string) error {
 			return fmt.Errorf("hexxy: %v", err.Error())
 		}
 	}
+
 	defer infile.Close()
 
 	if opts.Seek != -1 {
@@ -390,13 +444,13 @@ func Hexxy(args []string) error {
 	defer out.Flush()
 
 	if opts.Reverse {
-		if err := XXDReverse(infile, outfile); err != nil {
+		if err := HexxyReverse(infile, outfile); err != nil {
 			return fmt.Errorf("hexxy: %v", err.Error())
 		}
 		return nil
 	}
 
-	if err := XXD(infile, out, infile.Name(), color); err != nil {
+	if err := HexxyDump(infile, out, infile.Name(), color); err != nil {
 		return fmt.Errorf("hexxy: %v", err.Error())
 	}
 
@@ -430,8 +484,30 @@ func usage() {
 	fmt.Fprint(os.Stderr, usage_msg)
 }
 
+// parses the color flag and decides whether color is appropriate or not
+func useColor() bool {
+	// NO_COLOR spec compliance
+	if HasNoColorEnvVar() {
+		return false
+	}
+
+	switch strings.ToLower(opts.HasColor) {
+	case "always":
+		return true
+	case "auto":
+		if opts.NoColor {
+			return false
+		}
+
+		return !outputIsPipe()
+	case "never":
+		return false
+	}
+	return false
+}
+
 func init() {
-	opts.Seek = -1 // default no-op value
+	opts.Seek = -1 // default no-op values
 	opts.Columns = -1
 	opts.GroupSize = -1
 	opts.Len = -1
@@ -441,16 +517,17 @@ func main() {
 	parser := flags.NewParser(&opts, flags.Default)
 	args, err := parser.Parse()
 	if flags.WroteHelp(err) {
-		fmt.Print(usage_msg)
+		usage()
 		os.Exit(0)
 	}
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	STDOUT_ISPIPE = inputIsPipe()
+	// set color based on flags or default to off
+	USE_COLOR = useColor()
 
-	if !STDOUT_ISPIPE && len(args) == 0 {
+	if !inputIsPipe() && len(args) == 0 {
 		parser.WriteHelp(os.Stderr)
 		fmt.Print(usage_msg)
 		os.Exit(0)

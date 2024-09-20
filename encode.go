@@ -39,9 +39,9 @@ func binaryEncode(dst, src []byte) {
 	_, _ = src[0], dst[7]
 	for i := 7; i >= 0; i-- {
 		if src[0]&(1<<d) == 0 {
-			dst[i] = 0
+			dst[i] = '0'
 		} else {
-			dst[i] = 1
+			dst[i] = '1'
 		}
 		d++
 	}
@@ -133,8 +133,8 @@ func fromHexChar(c byte) (byte, bool) {
 	return 0, false
 }
 
-// check if entire line is full of empty []byte{0} bytes (nul in C)
-func empty(b *[]byte) bool {
+// check if entire line is full of isEmpty []byte{0} bytes (nul in C)
+func isEmpty(b *[]byte) bool {
 	for i := 0; i < len(*b); i++ {
 		if (*b)[i] != 0 {
 			return false

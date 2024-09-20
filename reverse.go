@@ -7,7 +7,7 @@ import (
 	"io"
 )
 
-func XXDReverse(r io.Reader, w io.Writer) error {
+func HexxyReverse(r io.Reader, w io.Writer) error {
 	var (
 		cols int
 		octs int
@@ -53,21 +53,38 @@ func XXDReverse(r io.Reader, w io.Writer) error {
 		}
 
 		if dumpType == dumpHex {
-			for i := 0; n >= octs; {
-				if rv, _ := hexDecode(char, line[i:i+octs]); rv == 0 {
+			// line = line[9:48]
+			line = line[9 : len(line)-19]
+			n := len(line)
+
+			for i := 0; i <= n; {
+				// print(string(line[i : i+4]))
+
+				if rv, _ := hexDecode(char, line[i:i+octs]); rv != 0 {
 					w.Write(char)
-					i += 2
-					n -= 2
-					c++
-				} else if rv == -1 {
-					i++
-					n--
-				} else {
-					// rv == -2
-					i += 2
-					n -= 2
 				}
+
+				i += 5
+				// time.Sleep(time.Millisecond * 500)
 			}
+
+			// for i := 0; n >= octs+1; {
+			// 	print(string(line[i : i+octs]))
+			// 	time.Sleep(time.Millisecond * 500)
+			// 	if rv, _ := hexDecode(char, line[i:i+octs]); rv != 0 {
+			// 		w.Write(char)
+			// 		i += 2
+			// 		n -= 2
+			// 		c++
+			// 	} else if rv == -1 {
+			// 		i++
+			// 		n--
+			// 	} else {
+			// 		// rv == -2
+			// 		i += 2
+			// 		n -= 2
+			// 	}
+			// }
 		} else if dumpType == dumpBinary {
 			for i := 0; n >= octs; {
 				if binaryDecode(char, line[i:i+octs]) != -1 {
