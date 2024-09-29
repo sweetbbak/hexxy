@@ -1,4 +1,4 @@
-module hexxy
+module github.com/sweetbbak/hexxy
 
 go 1.21.5
 

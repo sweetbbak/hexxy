@@ -10,8 +10,7 @@
 requirements: Go 1.20+ (it may build with earlier versions as well but I have not tested them) and git
 
 ```sh
-git clone https://github.com/sweetbbak/hexxy && cd hexxy
-go build
+go install github.com/sweetbbak/hexxy@latest
 ```
 
 On ArchLinux ([hexxy-git](https://aur.archlinux.org/packages/hexxy-git)), e.g.:
