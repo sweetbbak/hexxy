@@ -99,12 +99,12 @@ func HexxyReverse(r io.Reader, w io.Writer) error {
 				}
 			}
 		} else if dumpType == dumpPlain {
-			for i := 0; n >= octs; i++ {
+			for i := 0; n >= octs; i += octs {
 				if rv, _ := hexDecode(char, line[i:i+octs]); rv != 0 {
 					w.Write(char)
 					c++
 				}
-				n--
+				n -= octs
 			}
 		} else if dumpType == dumpCformat {
 			for i := 0; n >= octs; {
