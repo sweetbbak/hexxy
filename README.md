@@ -17,6 +17,8 @@ On ArchLinux ([hexxy-git](https://aur.archlinux.org/packages/hexxy-git)), e.g.:
 
 ```
 pikaur -S hexxy-git
+paru -S hexxy-git
+yay -S hexxy-git
 ```
 
 ## Example usage
@@ -54,7 +56,38 @@ hexxy -td file.bin
 
 # display offset in Octal format
 hexxy -to file.bin
+
+# configure color
+# shows color even when piping to a file or stdout/stderr
+hexxy --color=always # or never, auto
+
+# turn off ascii table color (but keep byte coloring)
+hexxy -A
+
+# write the default config file
+hexxy --create-config
+
+# ignore config file (you can also just delete it)
+# it is not required. Command line flags override config flags
+hexxy --no-config
+
+# show ascii table bars
+# and set the seperator (great time to set a default in the config file)
+hexxy --bars --seperator='|'
 ```
+
+## Building
+
+```sh
+git clone https://github.com/sweetbbak/hexxy.git
+cd hexxy
+go build -o hexxy -ldflags='-s -w' ./src
+# or use just by running 'just'
+```
+
+## Changelog
+
+- 3/23/25: added a config file and more options
 
 ## Performance
 
@@ -76,6 +109,13 @@ hexxy -N ~/bin/zk &> /dev/null  0.21s user 0.01s system 100% cpu 0.223 total
 hexxy ~/bin/zk &> /dev/null  0.37s user 0.01s system 99% cpu 0.383 total
 ```
 
+`hexxy` is obviously going to be slower as it is writing a lot more bytes in the form of
+ANSI escape sequences. There is potential to optimize this using some deduplication or Huffman
+encoding, but that might also be slower.
+
 ## Credits
+
 thanks to [felixge](https://github.com/felixge/go-xxd) for showing how this is done quickly
 thanks to [igoracmelo](https://github.com/igoracmelo/xx) for the idea to colorize hexdump output with a gradient
+
+thanks to everyone who has committed to this repo! <3

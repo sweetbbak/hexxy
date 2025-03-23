@@ -5,9 +5,7 @@ import (
 	"strconv"
 )
 
-const GREY = "\x1b[38;2;111;111;111m"
-const CLR = "\x1b[0m"
-
+var GREY = []byte("\x1b[38;2;111;111;111m")
 var ESC = []byte{0x5c, 0x78, 0x31, 0x62, 0x5b}
 var CLEAR = []byte("\x1b[0m")
 

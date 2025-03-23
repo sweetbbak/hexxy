@@ -1,2 +1,2 @@
 default:
-    go build -o hexxy -ldflags='-s -w'
+    go build -o hexxy -ldflags='-s -w' ./src

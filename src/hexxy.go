@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 
@@ -18,7 +20,8 @@ var opts struct {
 	Binary       bool   `short:"b" long:"binary" description:"output in binary format (01010101) incompatible with plain, reverse and include"`
 	Reverse      bool   `short:"r" long:"reverse" description:"re-assemble hexdump output back into binary"`
 	Autoskip     bool   `short:"a" long:"autoskip" description:"toggle autoskip (replaces blank lines with a *)"`
-	Bars         bool   `short:"B" long:"bars" description:"delimiter bars in ascii table"`
+	Bars         bool   `short:"B" long:"bars" description:"print delimiter bars in ascii table"`
+	Separator    string `          long:"separator" description:"separator character for the ascii character table"`
 	Seek         int64  `short:"s" long:"seek" description:"start at <seek> bytes"`
 	Len          int64  `short:"l" long:"len" description:"stop after <len> octets"`
 	Columns      int    `short:"c" long:"columns" description:"column count"`
@@ -27,10 +30,12 @@ var opts struct {
 	Upper        bool   `short:"u" long:"upper" description:"output hex in UPPERCASE format"`
 	CInclude     bool   `short:"i" long:"include" description:"output in C include format"`
 	OutputFile   string `short:"o" long:"output" description:"automatically output to file instead of STDOUT"`
-	Separator    string `          long:"separator" default:"|" description:"separator character for the ascii character table"`
-	HasColor     string `short:"C" long:"color" default:"auto" choice:"always" choice:"auto" choice:"never" description:"this option forces color output [always|auto|never]"`
+	Color        string `short:"C" long:"color" default:"auto" choice:"always" choice:"auto" choice:"never" description:"this option forces color output [always|auto|never]"`
 	NoColor      bool   `short:"n" long:"no-color" description:"do not print output with color"`
 	Verbose      bool   `short:"v" long:"verbose" description:"print debugging information and verbose output"`
+	WriteConfig  bool   `short:"W" long:"create-config" description:"create the default config file"`
+	NoConfig     bool   `short:"N" long:"no-config" description:"create the default config file"`
+	AsciiColor   bool   `short:"A" long:"no-ascii-color" description:"use color in the ascii table"`
 }
 
 var Debug = func(string, ...interface{}) {}
@@ -62,7 +67,7 @@ var (
 	commaSpace   = []byte(", ")
 	comma        = []byte(",")
 	semiColonNl  = []byte(";\n")
-	bar          = []byte("|")
+	bar          = []byte("┊")
 )
 
 var (
@@ -359,22 +364,50 @@ func HexxyDump(r io.Reader, w io.Writer, filename string, color *Color) error {
 			b := line[:n]
 			// |hello,.world!|
 			if opts.Bars {
-				w.Write(bar)
+				if USE_COLOR {
+					w.Write([]byte(GREY))
+					w.Write(bar)
+					w.Write(CLEAR)
+				} else {
+					w.Write(bar)
+				}
 			}
 
 			var v byte
 			for i := 0; i < len(b); i++ {
 				v = b[i]
-				if v > 0x1f && v < 0x7f {
-					w.Write(line[i : i+1])
+
+				if USE_COLOR && !opts.AsciiColor {
+					if v > 0x1f && v < 0x7f {
+						charByte := line[i : i+1][0]
+						b, c := color.Colorize2(charByte)
+						w.Write(b)
+						w.Write(line[i : i+1])
+						w.Write(c)
+					} else {
+						w.Write([]byte(GREY))
+						w.Write(dot)
+						w.Write(CLEAR)
+					}
 				} else {
-					w.Write(dot)
+					if v > 0x1f && v < 0x7f {
+						w.Write(line[i : i+1])
+					} else {
+						w.Write(dot)
+					}
 				}
 			}
 
 			if opts.Bars {
-				w.Write(bar)
+				if USE_COLOR {
+					w.Write([]byte(GREY))
+					w.Write(bar)
+					w.Write(CLEAR)
+				} else {
+					w.Write(bar)
+				}
 			}
+
 		}
 
 		w.Write(newLine)
@@ -491,7 +524,7 @@ func useColor() bool {
 		return false
 	}
 
-	switch strings.ToLower(opts.HasColor) {
+	switch strings.ToLower(opts.Color) {
 	case "always":
 		return true
 	case "auto":
@@ -513,8 +546,66 @@ func init() {
 	opts.Len = -1
 }
 
+func configPath() string {
+	cpath, _ := os.UserConfigDir()
+	if len(cpath) == 0 {
+
+		hdir, _ := os.UserHomeDir()
+		if len(hdir) == 0 {
+			return "hexxy.ini"
+		}
+
+		return path.Join(hdir, ".hexxy.ini")
+	}
+
+	return path.Join(cpath, "hexxy", "hexxy.ini")
+}
+
+//go:embed config/hexxy.ini
+var defaultConfig string
+
+func createConfig() error {
+	conf := configPath()
+	dirs := path.Dir(conf)
+
+	if err := os.MkdirAll(dirs, 0o755); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(conf, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = f.WriteString(defaultConfig)
+	return err
+}
+
+// this is jank
+func noConfig() bool {
+	for _, arg := range os.Args {
+		if arg == "--no-config" {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	parser := flags.NewParser(&opts, flags.Default)
+
+	if !noConfig() {
+		ini := flags.NewIniParser(parser)
+		// parse config first
+		if err := ini.ParseFile(configPath()); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				log.Printf("error parsing config file: %v", err)
+			}
+		}
+	}
+
+	// overwrites config values if provided by user
 	args, err := parser.Parse()
 	if flags.WroteHelp(err) {
 		usage()
@@ -522,6 +613,16 @@ func main() {
 	}
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if opts.WriteConfig {
+		err := createConfig()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		log.Printf("wrote config file at %s", configPath())
+		os.Exit(0)
 	}
 
 	// set color based on flags or default to off
@@ -535,6 +636,10 @@ func main() {
 
 	if opts.Verbose {
 		Debug = log.Printf
+	}
+
+	if opts.Separator != "" {
+		bar = []byte(opts.Separator)
 	}
 
 	if err := Hexxy(args); err != nil {
