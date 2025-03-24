@@ -407,7 +407,6 @@ func HexxyDump(r io.Reader, w io.Writer, filename string, color *Color) error {
 					w.Write(bar)
 				}
 			}
-
 		}
 
 		w.Write(newLine)
@@ -425,7 +424,7 @@ func Hexxy(args []string) error {
 	}
 
 	if !color.disable {
-		color.Compute()
+		color.Compute() // precompute this at compile time?
 	}
 
 	var (
@@ -521,6 +520,10 @@ func usage() {
 func useColor() bool {
 	// NO_COLOR spec compliance
 	if HasNoColorEnvVar() {
+		return false
+	}
+
+	if opts.NoColor {
 		return false
 	}
 
